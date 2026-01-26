@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "securitybench"
+version = "0.1.16"
+description = "Security Bench - Security testing for LLM pipelines"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Elastic-2.0"}
+authors = [
+    {name = "Security Bench Team"},
+]
+dependencies = [
+    "click>=8.0",
+    "httpx>=0.24",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+sb = "sb.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sb"]
+artifacts = [
+    "sb/*.json",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "sb/**/*.py",
+    "sb/**/*.json",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
