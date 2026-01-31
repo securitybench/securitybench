@@ -337,7 +337,9 @@
                 <span class="cmd">sb config</span> <span class="opt">[path]</span> <span class="opt">[options]</span><br>
                 <span class="cmd">sb fix</span> <span class="opt">[issue-id]</span><br>
                 <span class="cmd">sb init</span> <span class="opt">[options]</span><br>
-                <span class="cmd">sb describe</span> <span class="opt">[category]</span>
+                <span class="cmd">sb describe</span> <span class="opt">[category]</span><br>
+                <span class="cmd">sb update</span><br>
+                <span class="cmd">sb man</span>
             </div>
         </section>
 
@@ -355,6 +357,9 @@
                     <div class="option-desc">Scan local project files for security issues in infrastructure, code, and configuration. Auto-detects what to test based on what it finds.</div>
                 </div>
             </div>
+
+            <h3>Local Caching</h3>
+            <p>Tests and checks are downloaded from the Security Bench API and cached locally in <code>~/.securitybench/cache/</code>. Run <code>sb update</code> to get the latest tests.</p>
 
             <h3>Community vs PRO</h3>
             <p><strong>sb</strong> runs with community tests (~330 tests).</p>
@@ -578,6 +583,19 @@
                     <div class="option-desc">Output format: text (default), json.</div>
                 </div>
             </div>
+
+            <h3>sb update</h3>
+            <p>Download the latest tests and checks from the Security Bench API and cache them locally.</p>
+            <p>Security Bench caches tests and checks in <code>~/.securitybench/cache/</code> for faster subsequent runs. Run this command periodically to get the latest security tests.</p>
+            <h4>Cache behavior:</h4>
+            <ul class="check-list">
+                <li>Tests and checks are cached locally after first download</li>
+                <li>Cache is validated against API version before use</li>
+                <li><code>sb update</code> forces a fresh download regardless of cache state</li>
+            </ul>
+
+            <h3>sb man</h3>
+            <p>Open this manual page in your default web browser.</p>
         </section>
 
         <section class="man-section">

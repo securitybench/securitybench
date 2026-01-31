@@ -24,6 +24,8 @@ python3 -m sb.cli config
 | `python3 -m sb.cli config` | API keys, CORS, logging issues |
 | `python3 -m sb.cli audit` | All of the above |
 | `python3 -m sb.cli fix <id>` | Remediation guidance for a finding |
+| `python3 -m sb.cli update` | Download latest tests/checks |
+| `python3 -m sb.cli man` | Open manual in browser |
 
 ## Options
 
