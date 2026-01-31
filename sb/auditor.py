@@ -5,6 +5,7 @@ and runs them against local files and system.
 """
 import asyncio
 import fnmatch
+import json
 import os
 import re
 import subprocess
@@ -15,7 +16,27 @@ from typing import Optional
 
 import httpx
 
-from .loader import TestLoader, _parse_patterns
+from .loader import (
+    TestLoader, _parse_patterns, get_cache_dir,
+    load_cached_version, save_cached_version
+)
+
+
+def load_cached_checks() -> Optional[list]:
+    """Load checks from cache."""
+    checks_file = get_cache_dir() / "checks.json"
+    if checks_file.exists():
+        try:
+            return json.loads(checks_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return None
+
+
+def save_cached_checks(checks: list[dict]):
+    """Save checks to cache."""
+    checks_file = get_cache_dir() / "checks.json"
+    checks_file.write_text(json.dumps(checks, indent=2))
 
 
 @dataclass
@@ -98,22 +119,57 @@ class CheckLoader:
 
     API_BASE = TestLoader.API_BASE
 
+    def __init__(self, use_cache: bool = True):
+        """Initialize the check loader.
+
+        Args:
+            use_cache: Whether to use local cache (default True).
+        """
+        self.use_cache = use_cache
+
+    async def get_api_version(self) -> dict:
+        """Fetch version info from API."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{self.API_BASE}/api/version")
+            response.raise_for_status()
+            return response.json()
+
+    async def is_cache_valid(self) -> bool:
+        """Check if local cache matches API version."""
+        try:
+            api_version = await self.get_api_version()
+            local_version = load_cached_version()
+            return local_version.get("checks_version") == api_version.get("checks_version")
+        except Exception:
+            return False
+
     async def load_checks(
         self,
         command: Optional[str] = None,
         category: Optional[str] = None,
         limit: int = 500,
+        force_refresh: bool = False,
     ) -> list[SecurityCheck]:
         """Load checks from the Security Bench API.
+
+        Uses local cache when available and version matches.
 
         Args:
             command: Filter by command type (code, config, infra).
             category: Filter by category.
             limit: Maximum number of checks to load.
+            force_refresh: Skip cache and download fresh.
 
         Returns:
             List of SecurityCheck objects.
         """
+        # Try cache first (for full loads without filters)
+        if self.use_cache and not force_refresh and not command and not category:
+            if await self.is_cache_valid():
+                cached = load_cached_checks()
+                if cached:
+                    return self._checks_from_data(cached)[:limit]
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             params = {"limit": limit}
             if command:
@@ -128,37 +184,52 @@ class CheckLoader:
             response.raise_for_status()
 
             data = response.json()
-            checks = []
+            checks_data = data.get("checks", data if isinstance(data, list) else [])
+            checks = self._checks_from_data(checks_data)
 
-            for check_data in data.get("checks", data if isinstance(data, list) else []):
-                # Parse file_patterns - API may return as string repr of list
-                file_patterns = _parse_patterns(check_data.get("file_patterns", []))
-
-                # Unescape pattern - API may return double-escaped backslashes
-                pattern = check_data.get("pattern", "")
-                if pattern:
-                    # Replace double backslashes with single backslashes
-                    # This handles patterns like \\\\s (stored) -> \\s (regex)
-                    pattern = pattern.replace("\\\\", "\\")
-
-                check = SecurityCheck(
-                    id=check_data["id"],
-                    command=check_data.get("command", "code"),
-                    category=check_data.get("category", "misc"),
-                    name=check_data.get("name", check_data["id"]),
-                    description=check_data.get("description", ""),
-                    severity=check_data.get("severity", "medium"),
-                    detection_type=check_data.get("detection_type", "regex"),
-                    pattern=pattern,
-                    file_patterns=file_patterns,
-                    cwe=check_data.get("cwe"),
-                    owasp_llm=check_data.get("owasp_llm"),
-                    weight=check_data.get("weight", 5),
-                    remediation=check_data.get("remediation"),
-                )
-                checks.append(check)
+            # Cache the data if this was a full load
+            if self.use_cache and not command and not category:
+                save_cached_checks(checks_data)
+                try:
+                    api_version = await self.get_api_version()
+                    save_cached_version(api_version)
+                except Exception:
+                    pass
 
             return checks
+
+    def _checks_from_data(self, checks_data: list[dict]) -> list[SecurityCheck]:
+        """Convert check data dicts to SecurityCheck objects."""
+        checks = []
+        for check_data in checks_data:
+            # Parse file_patterns - API may return as string repr of list
+            file_patterns = _parse_patterns(check_data.get("file_patterns", []))
+
+            # Unescape pattern - API may return double-escaped backslashes
+            pattern = check_data.get("pattern", "")
+            if pattern:
+                # Replace double backslashes with single backslashes
+                # This handles patterns like \\\\s (stored) -> \\s (regex)
+                pattern = pattern.replace("\\\\", "\\")
+
+            check = SecurityCheck(
+                id=check_data["id"],
+                command=check_data.get("command", "code"),
+                category=check_data.get("category", "misc"),
+                name=check_data.get("name", check_data["id"]),
+                description=check_data.get("description", ""),
+                severity=check_data.get("severity", "medium"),
+                detection_type=check_data.get("detection_type", "regex"),
+                pattern=pattern,
+                file_patterns=file_patterns,
+                cwe=check_data.get("cwe"),
+                owasp_llm=check_data.get("owasp_llm"),
+                weight=check_data.get("weight", 5),
+                remediation=check_data.get("remediation"),
+            )
+            checks.append(check)
+
+        return checks
 
 
 class Auditor:

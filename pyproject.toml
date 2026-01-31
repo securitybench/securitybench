@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "securitybench"
-version = "0.1.16"
+version = "0.2.11"
 description = "Security Bench - Security testing for LLM pipelines"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -34,12 +34,14 @@ sb = "sb.cli:main"
 packages = ["sb"]
 artifacts = [
     "sb/*.json",
+    "sb/docs/*.html",
 ]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "sb/**/*.py",
     "sb/**/*.json",
+    "sb/**/*.html",
 ]
 
 [tool.pytest.ini_options]

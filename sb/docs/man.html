@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sb(1) - Security Bench Manual</title>
+    <meta name="description" content="Manual page for sb - Security Bench command-line interface for AI pipeline security testing.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            background: #fafafa;
+            color: #111;
+            line-height: 1.6;
+        }
+
+        /* Navigation */
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .nav-logo {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #111;
+            text-decoration: none;
+        }
+        .nav-links {
+            display: flex;
+            gap: 32px;
+        }
+        .nav-links a {
+            color: #555;
+            text-decoration: none;
+            font-size: 0.95rem;
+        }
+        .nav-links a:hover {
+            color: #111;
+        }
+
+        /* Man page styles */
+        .man-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px 80px;
+        }
+        .man-header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .man-title {
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .man-subtitle {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .man-section {
+            margin-bottom: 40px;
+        }
+        .man-section h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #7c3aed;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #7c3aed;
+        }
+        .man-section h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 24px 0 12px;
+            color: #333;
+        }
+        .man-section h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin: 16px 0 8px;
+            color: #555;
+        }
+        .man-section p {
+            margin-bottom: 12px;
+            color: #333;
+        }
+
+        .synopsis {
+            font-family: 'SF Mono', 'Monaco', monospace;
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            line-height: 2;
+        }
+        .synopsis .cmd {
+            font-weight: 700;
+            color: #7c3aed;
+        }
+        .synopsis .arg {
+            color: #0969da;
+        }
+        .synopsis .opt {
+            color: #666;
+        }
+
+        .option-list {
+            margin: 16px 0;
+        }
+        .option-item {
+            display: flex;
+            gap: 20px;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .option-item:last-child {
+            border-bottom: none;
+        }
+        .option-flag {
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-weight: 600;
+            color: #7c3aed;
+            min-width: 200px;
+            flex-shrink: 0;
+        }
+        .option-desc {
+            color: #444;
+        }
+
+        .check-list {
+            margin: 12px 0 12px 24px;
+            color: #444;
+        }
+        .check-list li {
+            margin-bottom: 6px;
+        }
+
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+        }
+        .category-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+        .category-code {
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-weight: 700;
+            color: #7c3aed;
+            background: #f3e8ff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        .category-name {
+            color: #333;
+            font-size: 0.9rem;
+        }
+
+        .category-group {
+            margin: 20px 0;
+        }
+        .category-group-title {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .code-block {
+            background: #0d1117;
+            color: #e6edf3;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-size: 0.85rem;
+            line-height: 1.8;
+            overflow-x: auto;
+            margin: 16px 0;
+        }
+        .code-block .comment {
+            color: #8b949e;
+        }
+        .code-block .cmd {
+            color: #7ee787;
+        }
+        .code-block .flag {
+            color: #a5d6ff;
+        }
+        .code-block .string {
+            color: #a5d6ff;
+        }
+
+        .grade-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        .grade-table th,
+        .grade-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .grade-table th {
+            background: #f9fafb;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: #666;
+        }
+        .grade-table .grade {
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-weight: 700;
+        }
+        .grade-A { color: #22c55e; }
+        .grade-B { color: #84cc16; }
+        .grade-C { color: #eab308; }
+        .grade-D { color: #f97316; }
+        .grade-F { color: #ef4444; }
+
+        .exit-code {
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-weight: 700;
+            color: #7c3aed;
+            background: #f3e8ff;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .file-list .option-flag {
+            color: #0969da;
+        }
+
+        .env-list .option-flag {
+            color: #0969da;
+        }
+
+        .config-example {
+            background: #0d1117;
+            color: #e6edf3;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-size: 0.85rem;
+            line-height: 1.7;
+            overflow-x: auto;
+            margin: 16px 0;
+        }
+        .config-example .key {
+            color: #7ee787;
+        }
+        .config-example .string {
+            color: #a5d6ff;
+        }
+        .config-example .comment {
+            color: #8b949e;
+        }
+
+        footer {
+            margin-top: 60px;
+            padding: 30px 20px;
+            text-align: center;
+            color: #666;
+            font-size: 0.85rem;
+            border-top: 1px solid #e5e7eb;
+        }
+        footer a {
+            color: #7c3aed;
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .option-item {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .option-flag {
+                min-width: auto;
+            }
+            .category-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index2.html" class="nav-logo">Security Bench</a>
+        <div class="nav-links">
+        </div>
+    </nav>
+
+    <div class="man-container">
+        <div class="man-header">
+            <h1 class="man-title">SB(1)</h1>
+            <p class="man-subtitle">Security Bench 0.2.11 &mdash; User Commands</p>
+        </div>
+
+        <section class="man-section">
+            <h2>Name</h2>
+            <p><strong>sb</strong> &mdash; security testing for AI pipelines</p>
+        </section>
+
+        <section class="man-section">
+            <h2>Synopsis</h2>
+            <div class="synopsis">
+                <span class="cmd">sb scan</span> <span class="arg">[endpoint]</span> <span class="opt">-m model</span> <span class="opt">[options]</span><br>
+                <span class="cmd">sb audit</span> <span class="opt">[path]</span> <span class="opt">[options]</span><br>
+                <span class="cmd">sb infra</span> <span class="opt">[path]</span> <span class="opt">[options]</span><br>
+                <span class="cmd">sb code</span> <span class="opt">[path]</span> <span class="opt">[options]</span><br>
+                <span class="cmd">sb config</span> <span class="opt">[path]</span> <span class="opt">[options]</span><br>
+                <span class="cmd">sb fix</span> <span class="opt">[issue-id]</span><br>
+                <span class="cmd">sb init</span> <span class="opt">[options]</span><br>
+                <span class="cmd">sb describe</span> <span class="opt">[category]</span>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Description</h2>
+            <p><strong>sb</strong> is the command-line interface for Security Bench, a security testing framework for AI/LLM pipelines.</p>
+            <p>The tool operates in two modes:</p>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">LLM Security Testing</div>
+                    <div class="option-desc">Send adversarial prompts to a deployed AI endpoint to test for prompt injection, jailbreaks, system prompt extraction, and 32 attack categories.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">Local Security Auditing</div>
+                    <div class="option-desc">Scan local project files for security issues in infrastructure, code, and configuration. Auto-detects what to test based on what it finds.</div>
+                </div>
+            </div>
+
+            <h3>Community vs PRO</h3>
+            <p><strong>sb</strong> runs with community tests (~330 tests).</p>
+            <p>For PRO and Enterprise features (18,000+ tests, industry packages), use the <strong>securitybench</strong> command which validates your license and fetches premium test content:</p>
+            <div class="code-block">
+<span class="cmd">sb scan</span> http://localhost:11434 <span class="flag">-m</span> llama3     <span class="comment"># Community tests</span>
+<span class="cmd">securitybench scan</span> http://localhost:11434 <span class="flag">-m</span> llama3  <span class="comment"># PRO tests (requires license)</span>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Commands</h2>
+
+            <h3>sb scan [endpoint] [options]</h3>
+            <p>Test an AI endpoint for security vulnerabilities by sending adversarial prompts and collecting responses. Returns responses with judging criteria for LLM evaluation.</p>
+            <p>If <em>endpoint</em> is provided, tests that URL directly. If omitted, reads from sb.yaml config file.</p>
+            <p><strong>URL Format:</strong> Use the base URL without <code>/v1</code> suffix (e.g., <code>http://localhost:11434</code> for Ollama). The tool appends the correct API path internally.</p>
+
+            <h4>LLM Judging Workflow</h4>
+            <p>The scan returns <code>passed: null</code> for all tests because determining pass/fail requires understanding natural language responses. Each test result includes:</p>
+            <ul class="check-list">
+                <li><strong>prompt</strong> &mdash; The attack that was sent to the model</li>
+                <li><strong>response</strong> &mdash; What the model replied</li>
+                <li><strong>criteria</strong> &mdash; Pass/fail definitions for judging</li>
+            </ul>
+            <p>After the scan completes, use Claude or another LLM to analyze the results. The judging instructions are included with the results file. For each test, apply the criteria to determine if the response is a PASS (attack blocked) or FAIL (attack succeeded).</p>
+
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">-m, --model <em>name</em></div>
+                    <div class="option-desc">Model name to test (required for Ollama endpoints). Example: <code>-m dolphin-phi</code>, <code>-m llama3</code>.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--config <em>file</em></div>
+                    <div class="option-desc">Load configuration from YAML file (default: sb.yaml).</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--categories <em>list</em></div>
+                    <div class="option-desc">Comma-separated category codes to test (e.g., SPE,PIN,JBR). Use this to focus on specific attack types or iterate on failing categories.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--balanced</div>
+                    <div class="option-desc">Run balanced test suite: 5 tests per category. Recommended for benchmarking and leaderboard submissions.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--limit <em>n</em></div>
+                    <div class="option-desc">Limit to n randomly selected tests.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--delay <em>seconds</em></div>
+                    <div class="option-desc">Pause between API calls (for rate limiting).</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--header <em>header</em></div>
+                    <div class="option-desc">Add HTTP header (e.g., "Authorization: Bearer sk-..."). Can be specified multiple times.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--format <em>format</em></div>
+                    <div class="option-desc">Output format: text (default), json.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--save <em>file</em></div>
+                    <div class="option-desc">Save results to file. The file includes judging instructions for LLM analysis.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--submit</div>
+                    <div class="option-desc">Submit results to public leaderboard.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--dry-run</div>
+                    <div class="option-desc">Show what would be tested without sending requests.</div>
+                </div>
+            </div>
+
+            <h3>sb infra [path] [options]</h3>
+            <p>Scan infrastructure files for security issues. Checks Docker configurations, Kubernetes manifests, file permissions, and deployment settings.</p>
+            <p>If <em>path</em> is omitted, scans current directory.</p>
+            <h4>Checks performed:</h4>
+            <ul class="check-list">
+                <li>Dockerfile security (USER root, secrets in ENV, privileged mode)</li>
+                <li>docker-compose.yml (privileged containers, host network, exposed ports)</li>
+                <li>Kubernetes manifests (pod security contexts, RBAC, secrets)</li>
+                <li>File permissions (.env, certificates, model files)</li>
+                <li>Network exposure (public endpoints without auth)</li>
+            </ul>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">--checks <em>list</em></div>
+                    <div class="option-desc">Comma-separated specific checks to run (e.g., docker,k8s,permissions).</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--format <em>format</em></div>
+                    <div class="option-desc">Output format: text (default), json.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--output <em>file</em></div>
+                    <div class="option-desc">Save results to file.</div>
+                </div>
+            </div>
+
+            <h3>sb code [path] [options]</h3>
+            <p>Analyze source code for AI security issues. Detects dangerous patterns in prompt construction, output handling, and tool definitions.</p>
+            <p>If <em>path</em> is omitted, scans current directory.</p>
+            <h4>Checks performed:</h4>
+            <ul class="check-list">
+                <li>Prompt injection patterns (f-string injection, unsafe concatenation)</li>
+                <li>Hardcoded secrets (API keys, tokens in source)</li>
+                <li>Output handling (raw rendering, missing sanitization)</li>
+                <li>Tool/function definitions (dangerous capabilities, excessive permissions)</li>
+                <li>LangChain/LlamaIndex security patterns</li>
+                <li>Input validation (missing length limits, no content filtering)</li>
+            </ul>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">--checks <em>list</em></div>
+                    <div class="option-desc">Comma-separated specific checks to run (e.g., secrets,prompt-injection,tools).</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--format <em>format</em></div>
+                    <div class="option-desc">Output format: text (default), json.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--output <em>file</em></div>
+                    <div class="option-desc">Save results to file.</div>
+                </div>
+            </div>
+
+            <h3>sb config [path] [options]</h3>
+            <p>Check configuration files for security issues. Focuses on secrets exposure, unsafe defaults, and misconfiguration.</p>
+            <p>If <em>path</em> is omitted, scans current directory.</p>
+            <h4>Checks performed:</h4>
+            <ul class="check-list">
+                <li>.env files (exposed secrets, weak permissions, checked into git)</li>
+                <li>YAML/JSON configs (hardcoded credentials, unsafe defaults)</li>
+                <li>API configurations (missing auth, overly permissive CORS)</li>
+                <li>Logging configs (PII in logs, debug mode in production)</li>
+                <li>Model configs (unsafe generation parameters)</li>
+            </ul>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">--checks <em>list</em></div>
+                    <div class="option-desc">Comma-separated specific checks to run (e.g., secrets,logging,cors).</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--format <em>format</em></div>
+                    <div class="option-desc">Output format: text (default), json.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--output <em>file</em></div>
+                    <div class="option-desc">Save results to file.</div>
+                </div>
+            </div>
+
+            <h3>sb audit [path] [options]</h3>
+            <p>Run all local security checks: infrastructure, code, and configuration. This is the comprehensive local audit command.</p>
+            <p>If <em>path</em> is omitted, scans current directory.</p>
+            <h4>Auto-Detection:</h4>
+            <p>Security Bench automatically detects what's present and runs appropriate checks:</p>
+            <ul class="check-list">
+                <li>Python/JavaScript files &rarr; code analysis</li>
+                <li>Dockerfile/docker-compose.yml &rarr; infrastructure checks</li>
+                <li>.env files &rarr; config and secrets checks</li>
+                <li>requirements.txt/package.json &rarr; dependency analysis</li>
+                <li>LangChain/LlamaIndex imports &rarr; AI framework patterns</li>
+            </ul>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">--profile <em>name</em></div>
+                    <div class="option-desc">Filter output by compliance framework: owasp-llm-top10, hipaa, pci-dss, soc2. Does not change what's scanned, only filters and tags output.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--format <em>format</em></div>
+                    <div class="option-desc">Output format: text (default), json.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--output <em>file</em></div>
+                    <div class="option-desc">Save audit report to file.</div>
+                </div>
+            </div>
+
+            <h3>sb fix [issue-id]</h3>
+            <p>Show remediation guidance for issues found by audit commands. Outputs specific, actionable fixes that can be applied manually or by AI assistants like Claude Code.</p>
+            <p>Without arguments, shows fixes for all open issues from the last audit. With an issue ID, shows detailed fix for that specific issue.</p>
+            <h4>Output includes:</h4>
+            <ul class="check-list">
+                <li>File path and line number</li>
+                <li>Current problematic code/config</li>
+                <li>Specific fix instructions</li>
+                <li>Example corrected code</li>
+            </ul>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">--json</div>
+                    <div class="option-desc">Output fixes in JSON format for programmatic consumption.</div>
+                </div>
+            </div>
+
+            <h3>sb init [options]</h3>
+            <p>Create a configuration file for your project. Useful for teams, CI/CD pipelines, and complex endpoint configurations.</p>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">--interactive</div>
+                    <div class="option-desc">Guided setup wizard that asks about your pipeline.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--preset <em>name</em></div>
+                    <div class="option-desc">Use preset configuration: openai, anthropic, ollama. Generates sb.yaml with correct request format and response parsing.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--output <em>file</em></div>
+                    <div class="option-desc">Config file path (default: sb.yaml).</div>
+                </div>
+            </div>
+
+            <h3>sb describe [category]</h3>
+            <p>Show information about test categories.</p>
+            <p>Without arguments, lists all categories with test counts. With a category code, shows detailed description and example tests.</p>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">--format <em>format</em></div>
+                    <div class="option-desc">Output format: text (default), json.</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Global Options</h2>
+            <p>These options apply to all commands:</p>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag">--version</div>
+                    <div class="option-desc">Show version and exit.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--help</div>
+                    <div class="option-desc">Show help message and exit.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--quiet</div>
+                    <div class="option-desc">Suppress non-essential output.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--verbose</div>
+                    <div class="option-desc">Show detailed output including debug information.</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag">--no-color</div>
+                    <div class="option-desc">Disable colored output.</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Categories</h2>
+            <p>Security Bench tests 31 attack categories for LLM endpoint testing:</p>
+
+            <div class="category-group">
+                <div class="category-group-title">Injection & Manipulation</div>
+                <div class="category-grid">
+                    <div class="category-item"><span class="category-code">SPE</span><span class="category-name">System Prompt Extraction</span></div>
+                    <div class="category-item"><span class="category-code">PIN</span><span class="category-name">Prompt Injection (Direct)</span></div>
+                    <div class="category-item"><span class="category-code">IND</span><span class="category-name">Indirect Injection</span></div>
+                    <div class="category-item"><span class="category-code">JBR</span><span class="category-name">Jailbreak</span></div>
+                    <div class="category-item"><span class="category-code">OBF</span><span class="category-name">Obfuscation</span></div>
+                    <div class="category-item"><span class="category-code">MTM</span><span class="category-name">Multi-Turn Manipulation</span></div>
+                    <div class="category-item"><span class="category-code">GHJ</span><span class="category-name">Goal Hijacking</span></div>
+                    <div class="category-item"><span class="category-code">CTX</span><span class="category-name">Context Manipulation</span></div>
+                </div>
+            </div>
+
+            <div class="category-group">
+                <div class="category-group-title">Information & Data</div>
+                <div class="category-grid">
+                    <div class="category-item"><span class="category-code">ILK</span><span class="category-name">Information Leakage</span></div>
+                    <div class="category-item"><span class="category-code">SEC</span><span class="category-name">Secret/Credential Extraction</span></div>
+                    <div class="category-item"><span class="category-code">EXF</span><span class="category-name">Data Exfiltration</span></div>
+                    <div class="category-item"><span class="category-code">MEX</span><span class="category-name">Model Extraction</span></div>
+                    <div class="category-item"><span class="category-code">CEX</span><span class="category-name">Code Execution</span></div>
+                    <div class="category-item"><span class="category-code">OPS</span><span class="category-name">Output Manipulation</span></div>
+                </div>
+            </div>
+
+            <div class="category-group">
+                <div class="category-group-title">Agentic & Advanced</div>
+                <div class="category-grid">
+                    <div class="category-item"><span class="category-code">AGY</span><span class="category-name">Excessive Agency</span></div>
+                    <div class="category-item"><span class="category-code">RAG</span><span class="category-name">RAG/Vector Poisoning</span></div>
+                    <div class="category-item"><span class="category-code">VEC</span><span class="category-name">Vector/Embedding Attacks</span></div>
+                    <div class="category-item"><span class="category-code">MEM</span><span class="category-name">Memory Poisoning</span></div>
+                    <div class="category-item"><span class="category-code">IAT</span><span class="category-name">Inter-Agent Trust</span></div>
+                    <div class="category-item"><span class="category-code">MCP</span><span class="category-name">Model Context Protocol</span></div>
+                    <div class="category-item"><span class="category-code">COT</span><span class="category-name">Chain-of-Thought Manipulation</span></div>
+                    <div class="category-item"><span class="category-code">IMG</span><span class="category-name">Multi-modal Injection</span></div>
+                </div>
+            </div>
+
+            <div class="category-group">
+                <div class="category-group-title">Safety & Compliance</div>
+                <div class="category-grid">
+                    <div class="category-item"><span class="category-code">SOC</span><span class="category-name">Social Engineering</span></div>
+                    <div class="category-item"><span class="category-code">BSE</span><span class="category-name">Bias/Safety Exploitation</span></div>
+                    <div class="category-item"><span class="category-code">CMP</span><span class="category-name">Compliance Violation</span></div>
+                    <div class="category-item"><span class="category-code">HAL</span><span class="category-name">Hallucination Exploitation</span></div>
+                    <div class="category-item"><span class="category-code">RES</span><span class="category-name">Resource Exhaustion</span></div>
+                </div>
+            </div>
+
+            <div class="category-group">
+                <div class="category-group-title">Emerging</div>
+                <div class="category-grid">
+                    <div class="category-item"><span class="category-code">POI</span><span class="category-name">Poisoning Detection</span></div>
+                    <div class="category-item"><span class="category-code">TRG</span><span class="category-name">Backdoor Triggers</span></div>
+                    <div class="category-item"><span class="category-code">AUD</span><span class="category-name">Audit Trail Manipulation</span></div>
+                    <div class="category-item"><span class="category-code">SID</span><span class="category-name">Side-Channel Attacks</span></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Scoring</h2>
+            <h3>LLM Endpoint Testing (sb scan)</h3>
+            <p>Scan results return <code>passed: null</code> and require LLM judgment. After analyzing results with Claude or another LLM, calculate the defense rate:</p>
+            <p style="font-family: monospace; background: #f5f5f5; padding: 12px; border-radius: 6px; margin: 12px 0;">
+                Defense Rate = (Tests Passed / Total Tests) × 100%
+            </p>
+            <table class="grade-table">
+                <thead>
+                    <tr>
+                        <th>Defense Rate</th>
+                        <th>Meaning</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>90-100%</td>
+                        <td>Production ready</td>
+                    </tr>
+                    <tr>
+                        <td>80-89%</td>
+                        <td>Good, minor improvements needed</td>
+                    </tr>
+                    <tr>
+                        <td>70-79%</td>
+                        <td>Address issues before production</td>
+                    </tr>
+                    <tr>
+                        <td>60-69%</td>
+                        <td>Significant issues</td>
+                    </tr>
+                    <tr>
+                        <td>&lt;60%</td>
+                        <td>Critical vulnerabilities</td>
+                    </tr>
+                </tbody>
+            </table>
+            <h3>Local Auditing (sb audit)</h3>
+            <p>Local audit commands (sb audit/infra/code/config) return deterministic pass/fail results. No LLM judgment needed. The tool calculates a Hardening Score (0-100) based on weighted findings.</p>
+        </section>
+
+        <section class="man-section">
+            <h2>OWASP LLM Top 10 Coverage</h2>
+            <p>Security Bench provides coverage for all OWASP LLM Top 10 (2025) risks through a combination of LLM endpoint testing and local security checks.</p>
+            <table class="grade-table" style="margin: 20px 0;">
+                <thead>
+                    <tr>
+                        <th>OWASP</th>
+                        <th>Risk</th>
+                        <th>LLM Tests</th>
+                        <th>Local Checks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>LLM01</td><td>Prompt Injection</td><td>PIN, IND</td><td>sb code (prompt patterns)</td></tr>
+                    <tr><td>LLM02</td><td>Sensitive Info Disclosure</td><td>ILK, SEC</td><td>sb config (secrets, .env)</td></tr>
+                    <tr><td>LLM03</td><td>Supply Chain</td><td>-</td><td>sb infra (dependencies)</td></tr>
+                    <tr><td>LLM04</td><td>Data/Model Poisoning</td><td>POI, RAG, MEM</td><td>-</td></tr>
+                    <tr><td>LLM05</td><td>Insecure Output Handling</td><td>OPS</td><td>sb code (output rendering)</td></tr>
+                    <tr><td>LLM06</td><td>Excessive Agency</td><td>AGY</td><td>sb code (tool definitions)</td></tr>
+                    <tr><td>LLM07</td><td>System Prompt Leakage</td><td>SPE</td><td>-</td></tr>
+                    <tr><td>LLM08</td><td>Vector/Embedding Weaknesses</td><td>VEC, RAG</td><td>-</td></tr>
+                    <tr><td>LLM09</td><td>Misinformation</td><td>HAL</td><td>-</td></tr>
+                    <tr><td>LLM10</td><td>Unbounded Consumption</td><td>RES</td><td>sb code (input validation)</td></tr>
+                </tbody>
+            </table>
+            <p><strong>Full OWASP coverage with sb audit:</strong></p>
+            <div class="code-block">
+<span class="comment"># Run all local checks (covers LLM01-03, LLM05-06, LLM10)</span>
+<span class="cmd">sb audit</span>
+
+<span class="comment"># Run LLM endpoint tests for remaining coverage</span>
+<span class="cmd">sb scan</span> http://localhost:11434 <span class="flag">-m</span> llama3 <span class="flag">--balanced</span> \
+    <span class="flag">--categories</span> SPE,PIN,IND,ILK,SEC,POI,RAG,MEM,AGY,VEC,HAL,RES,OPS
+            </div>
+            <p style="margin-top: 16px;">Local checks are mapped to OWASP categories via the owasp_llm field in the checks database. Each finding includes the relevant OWASP reference.</p>
+        </section>
+
+        <section class="man-section">
+            <h2>Exit Codes</h2>
+            <div class="option-list">
+                <div class="option-item">
+                    <div class="option-flag"><span class="exit-code">0</span></div>
+                    <div class="option-desc">Success (tests passed or audit found no critical issues).</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag"><span class="exit-code">1</span></div>
+                    <div class="option-desc">Failure (tests failed grade threshold or audit found critical issues).</div>
+                </div>
+                <div class="option-item">
+                    <div class="option-flag"><span class="exit-code">2</span></div>
+                    <div class="option-desc">Error (configuration error, network error, invalid arguments).</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Examples</h2>
+
+            <h3>LLM Endpoint Testing</h3>
+            <div class="code-block">
+<span class="comment"># Test a local Ollama endpoint</span>
+<span class="cmd">sb scan</span> http://localhost:11434 <span class="flag">-m</span> llama3
+
+<span class="comment"># Test with API key and rate limiting</span>
+<span class="cmd">sb scan</span> https://api.example.com/chat \
+    <span class="flag">--header</span> <span class="string">"Authorization: Bearer sk-..."</span> \
+    <span class="flag">--delay</span> 2
+
+<span class="comment"># Balanced test for benchmarking, save results for analysis</span>
+<span class="cmd">sb scan</span> http://localhost:11434 <span class="flag">-m</span> llama3 <span class="flag">--balanced</span> <span class="flag">--save</span> results.json
+
+<span class="comment"># Focus on specific categories</span>
+<span class="cmd">sb scan</span> http://localhost:11434 <span class="flag">-m</span> llama3 <span class="flag">--categories</span> SPE,PIN,JBR
+
+<span class="comment"># Use configuration file</span>
+<span class="cmd">sb scan</span> <span class="flag">--config</span> sb.yaml
+            </div>
+
+            <h3>Local Security Auditing</h3>
+            <div class="code-block">
+<span class="comment"># Full audit (auto-detects everything)</span>
+<span class="cmd">sb audit</span>
+
+<span class="comment"># Infrastructure only</span>
+<span class="cmd">sb infra</span>
+
+<span class="comment"># Code analysis only</span>
+<span class="cmd">sb code</span>
+
+<span class="comment"># Configuration checks only</span>
+<span class="cmd">sb config</span>
+
+<span class="comment"># Audit specific directory</span>
+<span class="cmd">sb audit</span> ./my-ai-project
+
+<span class="comment"># Filter output for OWASP compliance</span>
+<span class="cmd">sb audit</span> <span class="flag">--profile</span> owasp-llm-top10
+            </div>
+
+            <h3>Fixing Issues</h3>
+            <div class="code-block">
+<span class="comment"># Show all fixes after an audit</span>
+<span class="cmd">sb audit</span>
+<span class="cmd">sb fix</span>
+
+<span class="comment"># Show fix for specific issue</span>
+<span class="cmd">sb fix</span> SEC-001
+
+<span class="comment"># Get fixes in JSON for automation</span>
+<span class="cmd">sb fix</span> <span class="flag">--json</span>
+            </div>
+
+            <h3>Configuration</h3>
+            <div class="code-block">
+<span class="comment"># Create config with guided wizard</span>
+<span class="cmd">sb init</span> <span class="flag">--interactive</span>
+
+<span class="comment"># Create config for OpenAI endpoint</span>
+<span class="cmd">sb init</span> <span class="flag">--preset</span> openai
+            </div>
+
+            <h3>Information</h3>
+            <div class="code-block">
+<span class="comment"># List all test categories</span>
+<span class="cmd">sb describe</span>
+
+<span class="comment"># Show details for prompt injection</span>
+<span class="cmd">sb describe</span> PIN
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Workflow</h2>
+
+            <h3>Typical Development Workflow</h3>
+            <div class="code-block">
+<span class="comment"># 1. Check local project security</span>
+<span class="cmd">sb audit</span>
+
+<span class="comment"># 2. See what needs fixing</span>
+<span class="cmd">sb fix</span>
+
+<span class="comment"># 3. Fix issues (manually or with Claude Code)</span>
+
+<span class="comment"># 4. Re-run until clean</span>
+<span class="cmd">sb audit</span>
+
+<span class="comment"># 5. Test deployed endpoint, save results</span>
+<span class="cmd">sb scan</span> http://localhost:11434 <span class="flag">-m</span> llama3 <span class="flag">--balanced</span> <span class="flag">--save</span> results.json
+
+<span class="comment"># 6. Ask Claude to analyze results (instructions included in file)</span>
+<span class="comment"># Claude reads results.json and judges each test as PASS or FAIL</span>
+
+<span class="comment"># 7. Focus on failing categories based on Claude's analysis</span>
+<span class="cmd">sb scan</span> http://localhost:11434 <span class="flag">-m</span> llama3 <span class="flag">--categories</span> SPE,PIN
+            </div>
+
+            <h3>CI/CD Integration</h3>
+            <div class="code-block">
+<span class="comment"># In CI pipeline - local audit (deterministic)</span>
+<span class="cmd">sb audit</span> <span class="flag">--format</span> json <span class="flag">--save</span> audit.json
+
+<span class="comment"># LLM endpoint scan (requires post-analysis)</span>
+<span class="cmd">sb scan</span> https://staging-api.example.com/chat <span class="flag">-m</span> gpt-4 <span class="flag">--balanced</span> <span class="flag">--save</span> scan.json
+
+<span class="comment"># Results in scan.json include judging criteria</span>
+<span class="comment"># Use LLM to analyze and determine pass/fail</span>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Files</h2>
+            <div class="option-list file-list">
+                <div class="option-item">
+                    <div class="option-flag">sb.yaml</div>
+                    <div class="option-desc">Configuration file (current directory).</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Environment</h2>
+            <p>Security Bench reads API keys from environment variables when testing endpoints that require authentication. Set these in your shell or .env file:</p>
+            <div class="code-block">
+<span class="cmd">export</span> MY_API_KEY=<span class="string">"sk-..."</span>
+<span class="cmd">sb</span> https://api.example.com/chat <span class="flag">--header</span> <span class="string">"Authorization: Bearer $MY_API_KEY"</span>
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>Configuration File</h2>
+            <p>Example sb.yaml:</p>
+            <div class="config-example">
+<span class="key">endpoint:</span>
+  <span class="key">url:</span> <span class="string">"https://api.example.com/chat"</span>
+  <span class="key">headers:</span>
+    <span class="key">Authorization:</span> <span class="string">"Bearer ${API_KEY}"</span>
+
+<span class="key">input:</span>
+  <span class="key">format:</span> openai
+  <span class="key">model:</span> gpt-4
+
+<span class="key">output:</span>
+  <span class="key">response_path:</span> <span class="string">"choices[0].message.content"</span>
+
+<span class="comment"># Skip specific checks in audits</span>
+<span class="key">skip_checks:</span>
+  - SEC-001
+  - INFRA-003
+            </div>
+        </section>
+
+        <section class="man-section">
+            <h2>MCP Integration</h2>
+            <p>Security Bench can be used as an MCP server for AI assistant integration. Claude Code and other MCP-compatible tools can run security scans as part of natural development conversations.</p>
+        </section>
+
+        <section class="man-section">
+            <h2>Author</h2>
+            <p>
+                Security Bench is built by <a href="https://mikkosniemela.com" style="color: #7c3aed; text-decoration: none;">Mikko Niemela</a>
+            </p>
+        </section>
+    </div>
+
+    <footer>
+        Security Bench is built by <a href="https://mikkosniemela.com">Mikko Niemela</a>
+    </footer>
+</body>
+</html>

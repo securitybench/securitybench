@@ -24,7 +24,7 @@ from .output import AuditOutput, format_audit_json
 
 
 @click.group()
-@click.version_option(version="0.1.15", prog_name="sb")
+@click.version_option(version="0.2.11", prog_name="sb")
 def main():
     """Security Bench CLI - Test LLM pipelines for security vulnerabilities."""
     pass
@@ -146,8 +146,14 @@ def scan(
             click.echo(f"  Limit: {limit}")
         return
 
-    # Run the actual scan (with incremental save if path specified)
-    save_path_obj = Path(save) if save else None
+    # Auto-generate save path if not specified (LLM-friendly: always save results)
+    if save:
+        final_save_path = Path(save)
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        final_save_path = Path(f"sb_scan_{timestamp}.json")
+
+    # Run the actual scan (with incremental save)
     results = asyncio.run(_run_scan(
         pipeline_config,
         categories=cat_list,
@@ -157,24 +163,34 @@ def scan(
         per_category=per_category,
         verbose=verbose,
         delay=delay,
-        save_path=save_path_obj,
+        save_path=final_save_path,
     ))
 
-    # Format and display results
-    formatter = ReportFormatter(format=output_format)
+    # Get endpoint URL for metadata
+    endpoint_url = pipeline_config.endpoint.url if pipeline_config.endpoint else endpoint
+
+    # Format and display results (pass metadata for LLM-friendly output)
+    formatter = ReportFormatter(
+        format=output_format,
+        endpoint=endpoint_url,
+        model=model,
+        save_path=str(final_save_path),
+    )
     output = formatter.format(results)
     click.echo(output)
 
-    # Save results if requested
-    if save:
-        save_path = Path(save)
-        with open(save_path, 'w') as f:
-            if output_format in ('json', 'markdown'):
-                f.write(output)
-            else:
-                json_formatter = ReportFormatter(format='json')
-                f.write(json_formatter.format(results))
-        click.echo(f"\nResults saved to: {save_path}")
+    # Save results with embedded instructions
+    with open(final_save_path, 'w') as f:
+        if output_format in ('json', 'markdown'):
+            f.write(output)
+        else:
+            # Always save as JSON with instructions for LLM analysis
+            json_formatter = ReportFormatter(
+                format='json',
+                endpoint=endpoint_url,
+                model=model,
+            )
+            f.write(json_formatter.format(results))
 
     # Submit to leaderboard if requested
     if submit and model:
@@ -923,6 +939,65 @@ def fix(check_id: str):
 
     console.print(f"\n[dim]Run 'sb audit --verbose' to see if this check failed in your project.[/dim]")
     console.print()
+
+
+@main.command()
+def update():
+    """Update local cache of tests and checks.
+
+    Downloads the latest tests and checks from the API,
+    regardless of whether the cache is current.
+    """
+    from rich.console import Console
+    from .loader import TestLoader, get_cache_dir, load_cached_version
+    from .auditor import CheckLoader
+
+    console = Console()
+    console.print("\n[bold]Updating Security Bench cache...[/bold]\n")
+
+    cache_dir = get_cache_dir()
+    old_version = load_cached_version()
+
+    async def do_update():
+        # Force refresh tests
+        test_loader = TestLoader(use_cache=True)
+        tests = await test_loader.load_from_api(limit=5000, force_refresh=True)
+
+        # Force refresh checks
+        check_loader = CheckLoader(use_cache=True)
+        checks = await check_loader.load_checks(limit=1000, force_refresh=True)
+
+        return len(tests), len(checks)
+
+    test_count, check_count = asyncio.run(do_update())
+    new_version = load_cached_version()
+
+    console.print(f"  Tests:  {test_count} downloaded")
+    console.print(f"  Checks: {check_count} downloaded")
+    console.print(f"\n  Cache location: {cache_dir}")
+
+    # Show version changes
+    if old_version:
+        if old_version.get("tests_version") != new_version.get("tests_version"):
+            console.print(f"  [green]Tests updated[/green]: {old_version.get('tests_version', 'none')} → {new_version.get('tests_version')}")
+        if old_version.get("checks_version") != new_version.get("checks_version"):
+            console.print(f"  [green]Checks updated[/green]: {old_version.get('checks_version', 'none')} → {new_version.get('checks_version')}")
+
+    console.print("\n[green]Cache updated successfully![/green]\n")
+
+
+@main.command()
+def man():
+    """Open the Security Bench manual in browser."""
+    import webbrowser
+    try:
+        from importlib.resources import files
+        man_path = files('sb.docs').joinpath('man.html')
+        webbrowser.open(f'file://{man_path}')
+        click.echo("Opening Security Bench manual in browser...")
+    except Exception as e:
+        click.echo(f"Error opening manual: {e}")
+        click.echo("Manual available at: https://securitybench.ai/docs")
 
 
 if __name__ == '__main__':

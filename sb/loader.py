@@ -3,6 +3,7 @@
 Provides loading tests from local YAML files or remote API.
 """
 import ast
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -10,6 +11,50 @@ import yaml
 import httpx
 
 from .bench import SecurityTest
+
+
+# Cache directory for tests and checks
+CACHE_DIR = Path.home() / ".securitybench" / "cache"
+
+
+def get_cache_dir() -> Path:
+    """Get or create cache directory."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR
+
+
+def load_cached_version() -> dict:
+    """Load cached version info."""
+    version_file = get_cache_dir() / "version.json"
+    if version_file.exists():
+        try:
+            return json.loads(version_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def save_cached_version(version_info: dict):
+    """Save version info to cache."""
+    version_file = get_cache_dir() / "version.json"
+    version_file.write_text(json.dumps(version_info, indent=2))
+
+
+def load_cached_tests() -> Optional[list]:
+    """Load tests from cache."""
+    tests_file = get_cache_dir() / "tests.json"
+    if tests_file.exists():
+        try:
+            return json.loads(tests_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return None
+
+
+def save_cached_tests(tests: list[dict]):
+    """Save tests to cache."""
+    tests_file = get_cache_dir() / "tests.json"
+    tests_file.write_text(json.dumps(tests, indent=2))
 
 
 class LoaderError(Exception):
@@ -73,15 +118,33 @@ class TestLoader:
 
     API_BASE = "https://api.securitybench.ai"
 
-    def __init__(self, tests_dir: Optional[Path] = None):
+    def __init__(self, tests_dir: Optional[Path] = None, use_cache: bool = True):
         """Initialize the test loader.
 
         Args:
             tests_dir: Directory containing test YAML files.
+            use_cache: Whether to use local cache (default True).
         """
         self.tests_dir = tests_dir
         self._tests: list[SecurityTest] = []
         self._loaded = False
+        self.use_cache = use_cache
+
+    async def get_api_version(self) -> dict:
+        """Fetch version info from API."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{self.API_BASE}/api/version")
+            response.raise_for_status()
+            return response.json()
+
+    async def is_cache_valid(self) -> bool:
+        """Check if local cache matches API version."""
+        try:
+            api_version = await self.get_api_version()
+            local_version = load_cached_version()
+            return local_version.get("tests_version") == api_version.get("tests_version")
+        except Exception:
+            return False
 
     def load_all(
         self,
@@ -201,16 +264,28 @@ class TestLoader:
         self,
         categories: Optional[list[str]] = None,
         limit: int = 50,
+        force_refresh: bool = False,
     ) -> list[SecurityTest]:
         """Load tests from the Security Bench API.
+
+        Uses local cache when available and version matches.
 
         Args:
             categories: Filter by category codes.
             limit: Maximum number of tests to load.
+            force_refresh: Skip cache and download fresh.
 
         Returns:
             List of SecurityTest objects.
         """
+        # Try cache first (for full loads without category filter)
+        if self.use_cache and not force_refresh and not categories:
+            if await self.is_cache_valid():
+                cached = load_cached_tests()
+                if cached:
+                    tests = self._tests_from_data(cached)
+                    return tests[:limit]
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             params = {"limit": limit}
             if categories and len(categories) == 1:
@@ -223,28 +298,42 @@ class TestLoader:
             response.raise_for_status()
 
             data = response.json()
-            tests = []
+            tests_data = data.get("tests", [])
+            tests = self._tests_from_data(tests_data)
 
-            for test_data in data.get("tests", []):
-                # Parse patterns from API (may be string repr of list)
-                patterns = _parse_patterns(
-                    test_data.get("patterns") or test_data.get("failure_patterns")
-                )
-                test = SecurityTest(
-                    id=test_data["id"],
-                    category=test_data["category"],
-                    prompt=test_data["prompt"],
-                    failure_patterns=patterns,
-                    severity=test_data.get("severity", "medium"),
-                    priority=test_data.get("priority", "medium"),
-                )
-                tests.append(test)
+            # Cache the data if this was a full load
+            if self.use_cache and not categories:
+                save_cached_tests(tests_data)
+                try:
+                    api_version = await self.get_api_version()
+                    save_cached_version(api_version)
+                except Exception:
+                    pass
 
             # Filter by multiple categories if needed
             if categories and len(categories) > 1:
                 tests = [t for t in tests if t.category in categories]
 
             return tests[:limit]
+
+    def _tests_from_data(self, tests_data: list[dict]) -> list[SecurityTest]:
+        """Convert test data dicts to SecurityTest objects."""
+        tests = []
+        for test_data in tests_data:
+            # Parse patterns from API (may be string repr of list)
+            patterns = _parse_patterns(
+                test_data.get("patterns") or test_data.get("failure_patterns")
+            )
+            test = SecurityTest(
+                id=test_data["id"],
+                category=test_data["category"],
+                prompt=test_data["prompt"],
+                failure_patterns=patterns,
+                severity=test_data.get("severity", "medium"),
+                priority=test_data.get("priority", "medium"),
+            )
+            tests.append(test)
+        return tests
 
     async def load_balanced_from_api(
         self,
