@@ -10,7 +10,7 @@ from .loader import TestLoader, LoaderError
 from .evaluators import PatternEvaluator, EvaluationResult
 from .cli import main
 
-__version__ = "0.2.11"
+__version__ = "0.2.12"
 
 __all__ = [
     # Config

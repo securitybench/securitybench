@@ -24,7 +24,7 @@ from .output import AuditOutput, format_audit_json
 
 
 @click.group()
-@click.version_option(version="0.2.11", prog_name="sb")
+@click.version_option(version="0.2.12", prog_name="sb")
 def main():
     """Security Bench CLI - Test LLM pipelines for security vulnerabilities."""
     pass

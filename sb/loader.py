@@ -265,15 +265,18 @@ class TestLoader:
         categories: Optional[list[str]] = None,
         limit: int = 50,
         force_refresh: bool = False,
+        show_progress: bool = False,
     ) -> list[SecurityTest]:
         """Load tests from the Security Bench API.
 
         Uses local cache when available and version matches.
+        Uses cursor pagination to fetch all tests.
 
         Args:
             categories: Filter by category codes.
             limit: Maximum number of tests to load.
             force_refresh: Skip cache and download fresh.
+            show_progress: Print download progress to stdout.
 
         Returns:
             List of SecurityTest objects.
@@ -283,38 +286,71 @@ class TestLoader:
             if await self.is_cache_valid():
                 cached = load_cached_tests()
                 if cached:
-                    tests = self._tests_from_data(cached)
-                    return tests[:limit]
+                    # Verify cache completeness
+                    version = load_cached_version()
+                    expected_count = version.get("tests_count", 0)
+                    if len(cached) == expected_count or expected_count == 0:
+                        tests = self._tests_from_data(cached)
+                        return tests[:limit]
+
+        # Use cursor pagination to fetch all tests
+        all_tests_data = []
+        cursor = None
+        total = None
+        batch_size = 500
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            params = {"limit": limit}
-            if categories and len(categories) == 1:
-                params["category"] = categories[0]
+            while True:
+                params = {"limit": batch_size}
+                if cursor:
+                    params["cursor"] = cursor
+                if categories and len(categories) == 1:
+                    params["category"] = categories[0]
 
-            response = await client.get(
-                f"{self.API_BASE}/api/tests",
-                params=params,
-            )
-            response.raise_for_status()
+                response = await client.get(
+                    f"{self.API_BASE}/api/tests",
+                    params=params,
+                )
+                response.raise_for_status()
 
-            data = response.json()
-            tests_data = data.get("tests", [])
-            tests = self._tests_from_data(tests_data)
+                data = response.json()
+                batch = data.get("tests", [])
+                all_tests_data.extend(batch)
 
-            # Cache the data if this was a full load
-            if self.use_cache and not categories:
-                save_cached_tests(tests_data)
-                try:
-                    api_version = await self.get_api_version()
-                    save_cached_version(api_version)
-                except Exception:
-                    pass
+                # Get total from first request (for progress display)
+                if total is None:
+                    total = data.get("total", 0)
 
-            # Filter by multiple categories if needed
-            if categories and len(categories) > 1:
-                tests = [t for t in tests if t.category in categories]
+                # Show progress if requested
+                if show_progress and total:
+                    print(f"  Downloading tests... {len(all_tests_data)}/{total}", end="\r")
 
-            return tests[:limit]
+                # Check for next cursor
+                cursor = data.get("next_cursor")
+                if not cursor:
+                    break
+
+            if show_progress and total:
+                print(f"  Downloading tests... {len(all_tests_data)}/{total}")
+
+        tests = self._tests_from_data(all_tests_data)
+
+        # Cache the data if this was a full load
+        if self.use_cache and not categories:
+            save_cached_tests(all_tests_data)
+            try:
+                api_version = await self.get_api_version()
+                # Add tests_count for cache completeness check
+                api_version["tests_count"] = len(all_tests_data)
+                save_cached_version(api_version)
+            except Exception:
+                pass
+
+        # Filter by multiple categories if needed
+        if categories and len(categories) > 1:
+            tests = [t for t in tests if t.category in categories]
+
+        return tests[:limit]
 
     def _tests_from_data(self, tests_data: list[dict]) -> list[SecurityTest]:
         """Convert test data dicts to SecurityTest objects."""

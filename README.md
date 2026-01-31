@@ -159,7 +159,7 @@ Security Bench uses an LLM-as-Judge approach for evaluating test results. The sc
 ## Project Status
 
 **Status:** Beta
-**Version:** 0.2.11
+**Version:** 0.2.12
 
 **Working:**
 - ✅ LLM endpoint scanning (`sb scan`)
