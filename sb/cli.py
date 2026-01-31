@@ -18,13 +18,13 @@ load_dotenv()
 from .config import PipelineConfig, ConfigError
 from .bench import SecurityBench, ScanResults
 from .loader import TestLoader
-from .reports import ReportFormatter, Reporter
+from .reports import ReportFormatter
 from .auditor import Auditor, AuditResults
 from .output import AuditOutput, format_audit_json
 
 
 @click.group()
-@click.version_option(version="0.2.12", prog_name="sb")
+@click.version_option(version="0.2.13", prog_name="sb")
 def main():
     """Security Bench CLI - Test LLM pipelines for security vulnerabilities."""
     pass
@@ -43,7 +43,6 @@ def main():
 @click.option('--dry-run', is_flag=True, help='Show what would run without executing')
 @click.option('--format', 'output_format', type=click.Choice(['text', 'json', 'markdown']), default='text')
 @click.option('--save', type=click.Path(), help='Save results to file')
-@click.option('--submit', is_flag=True, help='Submit results to leaderboard')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
 @click.option('--delay', type=float, default=0, help='Delay between API calls (seconds)')
 def scan(
@@ -59,7 +58,6 @@ def scan(
     dry_run: bool,
     output_format: str,
     save: Optional[str],
-    submit: bool,
     verbose: bool,
     delay: float,
 ):
@@ -192,12 +190,6 @@ def scan(
             )
             f.write(json_formatter.format(results))
 
-    # Submit to leaderboard if requested
-    if submit and model:
-        reporter = Reporter()
-        url = asyncio.run(reporter.submit_to_leaderboard(model, results))
-        if url:
-            click.echo(f"Submitted to leaderboard: {url}")
 
 
 async def _run_scan(
