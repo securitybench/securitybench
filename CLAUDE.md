@@ -49,7 +49,7 @@ python3 -m sb.cli scan <url> -m <model> --limit 20   # Quick test
 
 ## What It Checks
 
-- 327 local security checks (infra, code, config)
+- 330 local security checks (infra, code, config)
 - 1,400+ LLM attack prompts (32 categories)
 - Docker/K8s misconfigurations
 - Hardcoded secrets and credentials

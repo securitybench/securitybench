@@ -14,7 +14,7 @@ Security Bench is a comprehensive security testing tool designed for real-world 
 - **Pipeline-First Testing** - Test deployed systems, not just models
 - **Lynis-Style Auditing** - Rich terminal output with grades, findings, and remediation
 - **Privacy-Preserving** - 100% local execution, no data leaves your environment
-- **Comprehensive Coverage** - 1,400+ LLM tests, 327 local checks across 32 categories
+- **Comprehensive Coverage** - 1,400+ LLM tests, 330 local checks across 32 categories
 - **Simple to Advanced** - Zero-config for quick scans, detailed config for complex systems
 
 ## Quick Start
@@ -159,7 +159,7 @@ Security Bench uses an LLM-as-Judge approach for evaluating test results. The sc
 ## Project Status
 
 **Status:** Beta
-**Version:** 0.2.13
+**Version:** 0.3.0
 
 **Working:**
 - ✅ LLM endpoint scanning (`sb scan`)

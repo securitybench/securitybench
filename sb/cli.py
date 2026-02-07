@@ -24,7 +24,7 @@ from .output import AuditOutput, format_audit_json
 
 
 @click.group()
-@click.version_option(version="0.2.13", prog_name="sb")
+@click.version_option(version="0.3.0", prog_name="sb")
 def main():
     """Security Bench CLI - Test LLM pipelines for security vulnerabilities."""
     pass
@@ -144,6 +144,25 @@ def scan(
             click.echo(f"  Limit: {limit}")
         return
 
+    # Validate model exists for Ollama endpoints
+    if model and ('ollama' in pipeline_config.endpoint.url.lower() or ':11434' in pipeline_config.endpoint.url):
+        import httpx
+        base_url = pipeline_config.endpoint.url.replace('/api/chat', '')
+        try:
+            response = httpx.get(f"{base_url}/api/tags", timeout=10.0)
+            if response.status_code == 200:
+                data = response.json()
+                available_models = [m.get('name', '').split(':')[0] for m in data.get('models', [])]
+                model_base = model.split(':')[0]  # Handle model:tag format
+                if model_base not in available_models and model not in [m.get('name') for m in data.get('models', [])]:
+                    raise click.ClickException(
+                        f"Model '{model}' not found on Ollama server.\n"
+                        f"Available models: {', '.join(available_models) if available_models else 'none'}\n"
+                        f"Run 'ollama pull {model}' to download it."
+                    )
+        except httpx.RequestError as e:
+            raise click.ClickException(f"Cannot connect to Ollama server at {base_url}: {e}")
+
     # Auto-generate save path if not specified (LLM-friendly: always save results)
     if save:
         final_save_path = Path(save)
@@ -254,67 +273,48 @@ def describe(category: Optional[str], output_format: str):
 
     Optionally specify CATEGORY to see details for that category.
     """
-    # Category descriptions
-    categories = {
-        "SPE": {
-            "name": "System Prompt Extraction",
-            "description": "Tests that attempt to extract system prompts from the model",
-            "severity": "critical",
-        },
-        "PIN": {
-            "name": "Prompt Injection",
-            "description": "Tests for prompt injection vulnerabilities",
-            "severity": "critical",
-        },
-        "JBR": {
-            "name": "Jailbreak",
-            "description": "Tests attempting to bypass safety measures",
-            "severity": "high",
-        },
-        "PII": {
-            "name": "PII Leakage",
-            "description": "Tests for personal data exposure",
-            "severity": "critical",
-        },
-        "TOX": {
-            "name": "Toxicity",
-            "description": "Tests for generation of harmful content",
-            "severity": "high",
-        },
-        "IND": {
-            "name": "Indirect Injection",
-            "description": "Tests for indirect prompt injection attacks",
-            "severity": "critical",
-        },
-        "HAL": {
-            "name": "Hallucination",
-            "description": "Tests for fabricated information",
-            "severity": "medium",
-        },
-    }
+    # Fetch categories from API
+    loader = TestLoader()
+    try:
+        api_categories = asyncio.run(loader.load_categories())
+    except Exception as e:
+        raise click.ClickException(f"Failed to load categories: {e}")
+
+    # Build categories dict from API data
+    categories = {}
+    for cat in api_categories:
+        code = cat.get('code', cat.get('id', ''))
+        categories[code] = {
+            "name": cat.get('name', code),
+            "description": cat.get('description', 'No description available'),
+            "test_count": cat.get('test_count', 0),
+        }
 
     if output_format == 'json':
         if category:
-            if category in categories:
-                click.echo(json.dumps({"categories": {category: categories[category]}}, indent=2))
+            cat_upper = category.upper()
+            if cat_upper in categories:
+                click.echo(json.dumps({"categories": {cat_upper: categories[cat_upper]}}, indent=2))
             else:
                 click.echo(json.dumps({"error": f"Unknown category: {category}"}, indent=2))
         else:
             click.echo(json.dumps({"categories": categories}, indent=2))
     else:
         if category:
-            if category in categories:
-                cat = categories[category]
-                click.echo(f"\n{category} - {cat['name']}")
+            cat_upper = category.upper()
+            if cat_upper in categories:
+                cat = categories[cat_upper]
+                click.echo(f"\n{cat_upper} - {cat['name']}")
                 click.echo(f"  {cat['description']}")
-                click.echo(f"  Severity: {cat['severity']}")
+                click.echo(f"  Tests: {cat.get('test_count', 'N/A')}")
             else:
                 click.echo(f"Unknown category: {category}")
-                click.echo(f"Available: {', '.join(categories.keys())}")
+                click.echo(f"Available: {', '.join(sorted(categories.keys()))}")
         else:
             click.echo("\nSecurity Bench Categories:")
             click.echo("=" * 40)
-            for code, cat in categories.items():
+            for code in sorted(categories.keys()):
+                cat = categories[code]
                 click.echo(f"\n{code} - {cat['name']}")
                 click.echo(f"  {cat['description']}")
 
@@ -498,7 +498,7 @@ output:
 
 
 # =============================================================================
-# AUDIT COMMANDS - Local security checks (Lynis-style)
+# AUDIT COMMANDS - Local security checks
 # =============================================================================
 
 def _run_audit_command(
@@ -508,9 +508,22 @@ def _run_audit_command(
     output_format: str,
     verbose: bool,
     save: Optional[str],
+    strict: bool = False,
+    confidence: Optional[str] = None,
 ):
     """Shared implementation for audit commands."""
     from rich.console import Console
+
+    # Validate confidence values
+    valid_confidence = {'high', 'medium', 'low'}
+    if confidence:
+        confidence_levels = [c.strip().lower() for c in confidence.split(',')]
+        invalid = [c for c in confidence_levels if c not in valid_confidence]
+        if invalid:
+            raise click.ClickException(
+                f"Invalid confidence level(s): {', '.join(invalid)}. "
+                f"Valid values are: high, medium, low"
+            )
 
     # Parse categories
     cat_list = [c.strip() for c in categories.split(',')] if categories else None
@@ -546,9 +559,9 @@ def _run_audit_command(
             'passed': passed,
             'findings': findings,
         })
-        # Print each check result (Lynis-style)
+        # Print each check result with confidence badge
         if output_format == 'text':
-            output.print_check_result(check, passed, len(findings))
+            output.print_check_result(check, passed, len(findings), findings)
 
     # Run audit with both callbacks
     results = asyncio.run(auditor.audit(
@@ -558,7 +571,15 @@ def _run_audit_command(
         result_callback=result_callback if output_format == 'text' else None,
     ))
 
-    # Generate log file (always, like Lynis)
+    # Apply strict mode for scoring
+    results.strict_mode = strict
+
+    # Filter findings by confidence level if specified
+    if confidence:
+        confidence_levels = [c.strip().lower() for c in confidence.split(',')]
+        results.findings = [f for f in results.findings if f.confidence in confidence_levels]
+
+    # Generate log file
     log_filename = f"sb_audit_{command or 'full'}.log"
     _write_audit_log(log_filename, path, command, results, check_results)
 
@@ -583,7 +604,7 @@ def _run_audit_command(
 
 
 def _write_audit_log(filename: str, path: str, command: Optional[str], results: AuditResults, check_results: list):
-    """Write Lynis-style log file with all check results."""
+    """Write log file with all check results."""
     with open(filename, 'w') as f:
         # Header
         f.write("=" * 80 + "\n")
@@ -748,12 +769,16 @@ def _write_audit_log(filename: str, path: str, command: Optional[str], results: 
 @click.option('--format', 'output_format', type=click.Choice(['text', 'json']), default='text')
 @click.option('--verbose', '-v', is_flag=True, help='Show detailed findings')
 @click.option('--save', type=click.Path(), help='Save results to JSON file')
+@click.option('--strict', is_flag=True, help='Include LOW confidence findings in score calculation')
+@click.option('--confidence', type=str, help='Filter by confidence: high,medium,low (comma-separated)')
 def audit(
     path: str,
     categories: Optional[str],
     output_format: str,
     verbose: bool,
     save: Optional[str],
+    strict: bool,
+    confidence: Optional[str],
 ):
     """Run a full security audit on local code and configuration.
 
@@ -761,8 +786,13 @@ def audit(
 
     This runs all check types: code analysis, configuration review,
     and infrastructure security checks.
+
+    Confidence levels:
+      HIGH   - Definite security issue, full score penalty
+      MEDIUM - Likely issue, partial penalty
+      LOW    - Possible issue, warning only (no score impact unless --strict)
     """
-    _run_audit_command(path, None, categories, output_format, verbose, save)
+    _run_audit_command(path, None, categories, output_format, verbose, save, strict, confidence)
 
 
 @main.command()
@@ -771,12 +801,16 @@ def audit(
 @click.option('--format', 'output_format', type=click.Choice(['text', 'json']), default='text')
 @click.option('--verbose', '-v', is_flag=True, help='Show detailed findings')
 @click.option('--save', type=click.Path(), help='Save results to JSON file')
+@click.option('--strict', is_flag=True, help='Include LOW confidence findings in score')
+@click.option('--confidence', type=str, help='Filter by confidence: high,medium,low')
 def code(
     path: str,
     categories: Optional[str],
     output_format: str,
     verbose: bool,
     save: Optional[str],
+    strict: bool,
+    confidence: Optional[str],
 ):
     """Run code security analysis.
 
@@ -787,7 +821,7 @@ def code(
     - Insecure deserialization
     - Prompt injection vulnerabilities
     """
-    _run_audit_command(path, 'code', categories, output_format, verbose, save)
+    _run_audit_command(path, 'code', categories, output_format, verbose, save, strict, confidence)
 
 
 @main.command()
@@ -796,12 +830,16 @@ def code(
 @click.option('--format', 'output_format', type=click.Choice(['text', 'json']), default='text')
 @click.option('--verbose', '-v', is_flag=True, help='Show detailed findings')
 @click.option('--save', type=click.Path(), help='Save results to JSON file')
+@click.option('--strict', is_flag=True, help='Include LOW confidence findings in score')
+@click.option('--confidence', type=str, help='Filter by confidence: high,medium,low')
 def config(
     path: str,
     categories: Optional[str],
     output_format: str,
     verbose: bool,
     save: Optional[str],
+    strict: bool,
+    confidence: Optional[str],
 ):
     """Run configuration security analysis.
 
@@ -811,7 +849,7 @@ def config(
     - Missing security headers
     - Overly permissive CORS policies
     """
-    _run_audit_command(path, 'config', categories, output_format, verbose, save)
+    _run_audit_command(path, 'config', categories, output_format, verbose, save, strict, confidence)
 
 
 @main.command()
@@ -820,12 +858,16 @@ def config(
 @click.option('--format', 'output_format', type=click.Choice(['text', 'json']), default='text')
 @click.option('--verbose', '-v', is_flag=True, help='Show detailed findings')
 @click.option('--save', type=click.Path(), help='Save results to JSON file')
+@click.option('--strict', is_flag=True, help='Include LOW confidence findings in score')
+@click.option('--confidence', type=str, help='Filter by confidence: high,medium,low')
 def infra(
     path: str,
     categories: Optional[str],
     output_format: str,
     verbose: bool,
     save: Optional[str],
+    strict: bool,
+    confidence: Optional[str],
 ):
     """Run infrastructure security analysis.
 
@@ -836,7 +878,7 @@ def infra(
     - Network security settings
     - File permission issues
     """
-    _run_audit_command(path, 'infra', categories, output_format, verbose, save)
+    _run_audit_command(path, 'infra', categories, output_format, verbose, save, strict, confidence)
 
 
 @main.command()
@@ -951,9 +993,9 @@ def update():
     old_version = load_cached_version()
 
     async def do_update():
-        # Force refresh tests
+        # Force refresh tests with pagination and progress
         test_loader = TestLoader(use_cache=True)
-        tests = await test_loader.load_from_api(limit=5000, force_refresh=True)
+        tests = await test_loader.load_from_api(limit=50000, force_refresh=True, show_progress=True)
 
         # Force refresh checks
         check_loader = CheckLoader(use_cache=True)
@@ -964,8 +1006,8 @@ def update():
     test_count, check_count = asyncio.run(do_update())
     new_version = load_cached_version()
 
-    console.print(f"  Tests:  {test_count} downloaded")
-    console.print(f"  Checks: {check_count} downloaded")
+    console.print(f"  Tests:  [green]{test_count}[/green] downloaded")
+    console.print(f"  Checks: [green]{check_count}[/green] downloaded")
     console.print(f"\n  Cache location: {cache_dir}")
 
     # Show version changes

@@ -1,7 +1,6 @@
 """Security Auditor for local code, config, and infrastructure checks.
 
-Lynis-inspired security scanner that fetches checks from the API
-and runs them against local files and system.
+Fetches checks from the API and runs them against local files and system.
 """
 import asyncio
 import fnmatch
@@ -55,6 +54,14 @@ class SecurityCheck:
     owasp_llm: Optional[str] = None
     weight: int = 5
     remediation: Optional[str] = None
+    # Context-aware matching fields
+    requires_context: list[str] = field(default_factory=list)  # Patterns that must ALSO match
+    exclude_patterns: list[str] = field(default_factory=list)  # Patterns that make it safe
+    confidence_rules: Optional[dict] = None  # {"high": "pattern", "medium": "pattern", "low": "pattern"}
+    false_positive_note: Optional[str] = None  # Guidance on common FPs
+    context_lines: int = 0  # Lines of context to consider for requires/exclude
+    vulnerable_example: Optional[str] = None  # Code that SHOULD trigger this check
+    safe_example: Optional[str] = None  # Code that should NOT trigger
 
 
 @dataclass
@@ -70,6 +77,8 @@ class Finding:
     matched_content: Optional[str] = None
     remediation: Optional[str] = None
     cwe: Optional[str] = None
+    confidence: str = "medium"  # "high", "medium", or "low"
+    false_positive_note: Optional[str] = None  # User guidance on common FPs
 
 
 @dataclass
@@ -82,13 +91,44 @@ class AuditResults:
     checks_passed: int
     checks_failed: int
     findings: list[Finding] = field(default_factory=list)
+    strict_mode: bool = False  # If True, LOW confidence findings affect score
 
     @property
     def hardening_score(self) -> int:
-        """Calculate hardening score (0-100)."""
+        """Calculate hardening score (0-100) using confidence-weighted penalties.
+
+        Penalties are per unique check (not per finding):
+        - Check with any HIGH confidence finding: -5 points
+        - Check with MEDIUM findings (no HIGH): -2 points
+        - Check with only LOW findings: 0 points (unless strict mode: -1 point)
+        """
         if self.checks_run == 0:
             return 100
-        return int((self.checks_passed / self.checks_run) * 100)
+
+        # Group findings by check_id and find max confidence per check
+        check_max_confidence = {}
+        for finding in self.findings:
+            check_id = finding.check_id
+            current = check_max_confidence.get(check_id, "low")
+            # Upgrade confidence level if higher
+            if finding.confidence == "high":
+                check_max_confidence[check_id] = "high"
+            elif finding.confidence == "medium" and current != "high":
+                check_max_confidence[check_id] = "medium"
+            elif current == "low":
+                check_max_confidence[check_id] = "low"
+
+        # Calculate score based on unique failing checks
+        score = 100
+        for check_id, max_conf in check_max_confidence.items():
+            if max_conf == "high":
+                score -= 5
+            elif max_conf == "medium":
+                score -= 2
+            elif max_conf == "low" and self.strict_mode:
+                score -= 1
+
+        return max(0, min(100, score))
 
     @property
     def grade(self) -> str:
@@ -112,6 +152,18 @@ class AuditResults:
             if f.severity in result:
                 result[f.severity].append(f)
         return result
+
+    def findings_by_confidence(self) -> dict[str, list[Finding]]:
+        """Group findings by confidence level."""
+        result = {"high": [], "medium": [], "low": []}
+        for f in self.findings:
+            if f.confidence in result:
+                result[f.confidence].append(f)
+        return result
+
+    def high_confidence_count(self) -> int:
+        """Count of HIGH confidence findings (definite issues)."""
+        return sum(1 for f in self.findings if f.confidence == "high")
 
 
 class CheckLoader:
@@ -212,6 +264,18 @@ class CheckLoader:
                 # This handles patterns like \\\\s (stored) -> \\s (regex)
                 pattern = pattern.replace("\\\\", "\\")
 
+            # Parse context-aware matching fields (JSON arrays/objects from API)
+            requires_context = _parse_patterns(check_data.get("requires_context", []))
+            exclude_patterns = _parse_patterns(check_data.get("exclude_patterns", []))
+
+            # Parse confidence_rules (may be JSON string or dict)
+            confidence_rules = check_data.get("confidence_rules")
+            if isinstance(confidence_rules, str):
+                try:
+                    confidence_rules = json.loads(confidence_rules)
+                except (json.JSONDecodeError, TypeError):
+                    confidence_rules = None
+
             check = SecurityCheck(
                 id=check_data["id"],
                 command=check_data.get("command", "code"),
@@ -226,6 +290,13 @@ class CheckLoader:
                 owasp_llm=check_data.get("owasp_llm"),
                 weight=check_data.get("weight", 5),
                 remediation=check_data.get("remediation"),
+                requires_context=requires_context,
+                exclude_patterns=exclude_patterns,
+                confidence_rules=confidence_rules,
+                false_positive_note=check_data.get("false_positive_note"),
+                context_lines=check_data.get("context_lines", 0) or 0,
+                vulnerable_example=check_data.get("vulnerable_example"),
+                safe_example=check_data.get("safe_example"),
             )
             checks.append(check)
 
@@ -243,10 +314,17 @@ class Auditor:
         """Initialize the auditor.
 
         Args:
-            scan_path: Directory to scan.
+            scan_path: Directory or single file to scan.
             exclude_patterns: Glob patterns to exclude.
         """
-        self.scan_path = scan_path.resolve()
+        resolved = scan_path.resolve()
+        # Handle single file scanning
+        if resolved.is_file():
+            self._single_file = resolved
+            self.scan_path = resolved.parent
+        else:
+            self._single_file = None
+            self.scan_path = resolved
         self.exclude_patterns = exclude_patterns or [
             "node_modules/*",
             ".git/*",
@@ -270,6 +348,28 @@ class Auditor:
 
     def _find_files(self, patterns: list[str]) -> list[Path]:
         """Find files matching glob patterns."""
+        # Single file mode: check if file matches any pattern
+        if self._single_file:
+            for pattern in patterns:
+                if not pattern:
+                    continue
+                # Check if the single file matches the pattern
+                filename = self._single_file.name
+                if pattern.startswith("*."):
+                    # Extension pattern like *.py
+                    ext = pattern[1:]  # ".py"
+                    if filename.endswith(ext):
+                        return [self._single_file]
+                elif "*" in pattern:
+                    # Glob pattern
+                    if fnmatch.fnmatch(filename, pattern):
+                        return [self._single_file]
+                else:
+                    # Exact filename match or pattern in name
+                    if pattern == filename or pattern in filename:
+                        return [self._single_file]
+            return []
+
         cache_key = tuple(sorted(patterns))
         if cache_key in self._file_cache:
             return self._file_cache[cache_key]
@@ -346,8 +446,41 @@ class Auditor:
                 return True
         return False
 
+    def _get_context_window(self, lines: list[str], line_idx: int, context_lines: int) -> str:
+        """Get a window of lines around the given index for context matching."""
+        if context_lines <= 0:
+            return lines[line_idx] if line_idx < len(lines) else ""
+        start = max(0, line_idx - context_lines)
+        end = min(len(lines), line_idx + context_lines + 1)
+        return "\n".join(lines[start:end])
+
+    def _calculate_confidence(self, check: SecurityCheck, matched_line: str, context: str) -> str:
+        """Calculate confidence level based on confidence_rules."""
+        if not check.confidence_rules:
+            return "medium"  # Default confidence
+
+        # Check patterns in order: high, medium, low
+        for level in ["high", "medium", "low"]:
+            pattern_str = check.confidence_rules.get(level)
+            if pattern_str:
+                try:
+                    conf_pattern = re.compile(pattern_str, re.IGNORECASE)
+                    # Check both the matched line and surrounding context
+                    if conf_pattern.search(matched_line) or conf_pattern.search(context):
+                        return level
+                except re.error:
+                    continue
+
+        return "low"  # No rules matched = lowest confidence
+
     def _run_regex_check(self, check: SecurityCheck) -> list[Finding]:
-        """Run a regex-based check against matching files."""
+        """Run a regex-based check against matching files.
+
+        Supports context-aware matching:
+        - requires_context: patterns that must ALSO match within context window
+        - exclude_patterns: patterns that make match safe (skip finding)
+        - confidence_rules: determine confidence based on additional patterns
+        """
         findings = []
 
         if not check.file_patterns:
@@ -360,6 +493,22 @@ class Auditor:
         except re.error:
             return findings
 
+        # Pre-compile context patterns for efficiency
+        # Use MULTILINE so ^ anchors work with context window (multiple lines)
+        requires_patterns = []
+        for req_pat in check.requires_context:
+            try:
+                requires_patterns.append(re.compile(req_pat, re.IGNORECASE | re.MULTILINE))
+            except re.error:
+                pass
+
+        exclude_compiled = []
+        for excl_pat in check.exclude_patterns:
+            try:
+                exclude_compiled.append(re.compile(excl_pat, re.IGNORECASE))
+            except re.error:
+                pass
+
         for file_path in files:
             # Skip minified/bundled files - regex can hang on these
             if self._is_minified_file(file_path):
@@ -367,24 +516,57 @@ class Auditor:
 
             try:
                 content = file_path.read_text(errors="ignore")
-                for line_num, line in enumerate(content.splitlines(), 1):
+                lines = content.splitlines()
+
+                for line_idx, line in enumerate(lines):
                     # Skip very long lines (minified code signature)
                     if len(line) > self.MAX_LINE_LENGTH:
                         continue
+
                     match = pattern.search(line)
-                    if match:
-                        findings.append(Finding(
-                            check_id=check.id,
-                            check_name=check.name,
-                            severity=check.severity,
-                            category=check.category,
-                            description=check.description,
-                            file_path=str(file_path.relative_to(self.scan_path)),
-                            line_number=line_num,
-                            matched_content=line.strip()[:200],
-                            remediation=check.remediation,
-                            cwe=check.cwe,
-                        ))
+                    if not match:
+                        continue
+
+                    # Get context window for context-aware checks
+                    context = self._get_context_window(lines, line_idx, check.context_lines)
+
+                    # Check exclude_patterns - skip finding if any match
+                    # When context_lines > 0, also check the context window
+                    excluded = False
+                    for excl_pat in exclude_compiled:
+                        if excl_pat.search(line) or (check.context_lines > 0 and excl_pat.search(context)):
+                            excluded = True
+                            break
+                    if excluded:
+                        continue
+
+                    # Check requires_context - ALL must match for finding to be valid
+                    if requires_patterns:
+                        all_required_found = True
+                        for req_pat in requires_patterns:
+                            if not (req_pat.search(line) or req_pat.search(context)):
+                                all_required_found = False
+                                break
+                        if not all_required_found:
+                            continue
+
+                    # Calculate confidence level
+                    confidence = self._calculate_confidence(check, line, context)
+
+                    findings.append(Finding(
+                        check_id=check.id,
+                        check_name=check.name,
+                        severity=check.severity,
+                        category=check.category,
+                        description=check.description,
+                        file_path=str(file_path.relative_to(self.scan_path)),
+                        line_number=line_idx + 1,  # 1-indexed
+                        matched_content=line.strip()[:200],
+                        remediation=check.remediation,
+                        cwe=check.cwe,
+                        confidence=confidence,
+                        false_positive_note=check.false_positive_note,
+                    ))
             except Exception:
                 continue
 
@@ -404,8 +586,9 @@ class Auditor:
                 cwd=str(self.scan_path),
             )
 
-            # Command checks typically return non-zero or specific output on failure
-            if result.returncode != 0 or result.stdout.strip():
+            # Command checks trigger when they produce stdout (finding evidence)
+            # Non-zero exit with no stdout means "not found" (safe) or tool missing
+            if result.stdout.strip():
                 findings.append(Finding(
                     check_id=check.id,
                     check_name=check.name,

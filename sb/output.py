@@ -1,6 +1,6 @@
 """Rich terminal output for Security Bench.
 
-Lynis-inspired terminal output with colors, progress bars, and professional formatting.
+Terminal output with colors, progress bars, and professional formatting.
 """
 import sys
 from dataclasses import dataclass
@@ -32,10 +32,14 @@ class OutputTheme:
     grade_c: str = "yellow"
     grade_d: str = "red"
     grade_f: str = "red bold"
+    # Confidence level styles
+    confidence_high: str = "red bold"
+    confidence_medium: str = "yellow"
+    confidence_low: str = "dim"
 
 
 class AuditOutput:
-    """Lynis-style terminal output for audit results."""
+    """Terminal output for audit results."""
 
     BANNER = """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -45,7 +49,7 @@ class AuditOutput:
 ║   ___) |  __/ (__| |_| | |  | | |_| |_| | |_) |  __/ | | | (__| | | |         ║
 ║  |____/ \\___|\\___|\\__,_|_|  |_|\\__|\\__, |____/ \\___|_| |_|\\___|_| |_|         ║
 ║                                     |___/                                      ║
-║                        Security Audit Tool v0.2.13                           ║
+║                        Security Audit Tool v0.3.0                           ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -83,7 +87,7 @@ class AuditOutput:
             console=self.console,
         )
 
-    def print_check_result(self, check: SecurityCheck, passed: bool, findings_count: int = 0):
+    def print_check_result(self, check: SecurityCheck, passed: bool, findings_count: int = 0, findings: list = None):
         """Print result of a single check."""
         if passed:
             status = Text("[ OK ]", style="green")
@@ -92,10 +96,26 @@ class AuditOutput:
 
         severity_color = getattr(self.theme, check.severity, "white")
 
+        # Get max confidence from findings
+        confidence_badge = ""
+        if findings and not passed:
+            max_conf = "low"
+            for f in findings:
+                if f.confidence == "high":
+                    max_conf = "high"
+                    break
+                elif f.confidence == "medium" and max_conf != "high":
+                    max_conf = "medium"
+            conf_style = getattr(self.theme, f"confidence_{max_conf}", "dim")
+            confidence_badge = Text(f"[{max_conf.upper()}]", style=conf_style)
+
         self.console.print(
             f"  {status}  ",
             Text(f"[{check.severity.upper()[:4]}]", style=severity_color),
-            f"  {check.id}: {check.name[:60]}",
+            "  ",
+            confidence_badge if confidence_badge else "",
+            "  " if confidence_badge else "",
+            f"{check.id}: {check.name[:60]}",
             end="",
         )
         if findings_count > 0:
@@ -165,6 +185,37 @@ class AuditOutput:
             self.console.print(severity_table)
             self.console.print()
 
+            # Findings by confidence
+            by_confidence = {"high": [], "medium": [], "low": []}
+            for f in results.findings:
+                if f.confidence in by_confidence:
+                    by_confidence[f.confidence].append(f)
+
+            self.console.rule("[cyan]Findings by Confidence[/cyan]")
+            self.console.print()
+
+            conf_table = Table(show_header=True, box=box.SIMPLE)
+            conf_table.add_column("Confidence", style="bold")
+            conf_table.add_column("Count", justify="right")
+            conf_table.add_column("Impact", justify="left")
+
+            for conf, findings in by_confidence.items():
+                if findings:
+                    style = getattr(self.theme, f"confidence_{conf}", "dim")
+                    impact = {
+                        "high": "Full score penalty",
+                        "medium": "Partial penalty",
+                        "low": "Warning only",
+                    }.get(conf, "")
+                    conf_table.add_row(
+                        Text(conf.upper(), style=style),
+                        str(len(findings)),
+                        Text(impact, style="dim"),
+                    )
+
+            self.console.print(conf_table)
+            self.console.print()
+
     def print_findings_detail(self, results: AuditResults, max_findings: int = 10):
         """Print detailed findings."""
         if not results.findings:
@@ -191,11 +242,13 @@ class AuditOutput:
     def _print_finding(self, finding: Finding, index: int):
         """Print a single finding."""
         severity_style = getattr(self.theme, finding.severity, "white")
+        confidence_style = getattr(self.theme, f"confidence_{finding.confidence}", "dim")
 
-        # Header
+        # Header with severity and confidence badges
         header = Text()
         header.append(f"{index}. ", style="bold")
         header.append(f"[{finding.severity.upper()}] ", style=severity_style)
+        header.append(f"[{finding.confidence.upper()}] ", style=confidence_style)
         header.append(finding.check_name, style="bold")
 
         self.console.print(header)
@@ -215,6 +268,10 @@ class AuditOutput:
 
         if finding.remediation:
             self.console.print(f"   [green]Fix:[/green] {finding.remediation[:100]}...")
+
+        # Show false positive note for low confidence findings
+        if finding.confidence == "low" and finding.false_positive_note:
+            self.console.print(f"   [dim]Note: {finding.false_positive_note}[/dim]")
 
         self.console.print()
 
@@ -285,6 +342,8 @@ def format_audit_json(results: AuditResults) -> dict:
                 "matched_content": f.matched_content,
                 "remediation": f.remediation,
                 "cwe": f.cwe,
+                "confidence": f.confidence,
+                "false_positive_note": f.false_positive_note,
             }
             for f in results.findings
         ],
